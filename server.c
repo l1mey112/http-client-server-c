@@ -1,15 +1,4 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <errno.h>
-#include <unistd.h>
-#include <netdb.h> // for getnameinfo()
-
-// Usual socket headers
-
 #include "server.h"
-
-#include <arpa/inet.h>
 
 /* 
  * 1. Create socket with socket() call
@@ -18,52 +7,16 @@
  * 4. accept() connection and send() or receive() data to/from connected sockets
  */
 
-void setHttpHeader(char httpHeader[])
-{
-    // File object to return
-    FILE *htmlData = fopen("index.html", "r");
-
-    char line[100];
-    char responseData[8000];
-    while (fgets(line, 100, htmlData) != 0) {
-        strcat(responseData, line);
-    }
-    // char httpHeader[8000] = "HTTP/1.1 200 OK\r\n\n";
-    strcat(httpHeader, responseData);
-}
-
 #define SIZE 1024
 #define BACKLOG 10  // Passed to listen()
 
 const int port = 8080;
 
-void fatal( const char* format, ... ) {
-	__builtin_va_list args;
-	fprintf( stderr, "FATAL: " );
-	__builtin_va_start( args, format );
-	vfprintf( stderr, format, args );
-	__builtin_va_end( args );
-	fprintf( stderr, "\n" );
-    exit(1);
-}
-void warn( const char* format, ... ) {
-	__builtin_va_list args;
-	fprintf( stderr, "WARN: " );
-	__builtin_va_start( args, format );
-	vfprintf( stderr, format, args );
-	__builtin_va_end( args );
-	fprintf( stderr, "\n" );
-}
-void info( const char* format, ... ) {
-	__builtin_va_list args;
-	fprintf( stderr, "INFO: " );
-	__builtin_va_start( args, format );
-	vfprintf( stderr, format, args );
-	__builtin_va_end( args );
-	fprintf( stderr, "\n" );
-}
-
-void report(const struct sockaddr_in *serverAddress)
+string cooltext = slit(
+" _____    _     __    __          __ _  __ __ _ \\    / __ _ \n"
+"(_  | |V||_)|  |_    /     \\    /|_ |_)(_ |_ |_) \\  / |_ |_)\n"
+"__)_|_| ||  |__|__   \\__    \\/\\/ |__|_)__)|__| \\  \\/  |__| \\\n\n");
+void report(Server *server, const struct sockaddr_in *serverAddress)
 {
     char hostBuffer[INET6_ADDRSTRLEN];
     char serviceBuffer[NI_MAXSERV]; // defined in `<netdb.h>`
@@ -80,7 +33,7 @@ void report(const struct sockaddr_in *serverAddress)
     if (err != 0)
         fatal("Failed to host information");
 
-    info("Server listening on http://%s:%d", hostBuffer, port);
+    server_info(server, "Server listening on http://%s:%d", hostBuffer, port);
 }
 
 Server create_server(int port, uint32_t bind_addr){
@@ -99,16 +52,17 @@ Server create_server(int port, uint32_t bind_addr){
 
     if (listen(server_fd, BACKLOG) < 0)
         fatal("Server failed to start listening for connections");
-
     Server server = {
         .address = server_address,
-        .sock_fd = server_fd
+        .sock_fd = server_fd,
+        .cache_position = 0,
+        .cache = {0}
     };
 
     if (pthread_mutex_init(&server.slock, NULL) != 0)
         fatal("Mutex creation failed");
 
-    report(&server.address);
+    report(&server, &server.address);
 
     return server;
 }
@@ -119,62 +73,158 @@ typedef struct {
     pthread_t tid;
 } dispatch_args;
 
-void dispatch(dispatch_args *args) {
-    Server *server = args->server;
-    
-    info("Dispatched handler on new connection");
-    send(args->client_sock_fd, H_HTTP_200, strlen(H_HTTP_200), 0);
+void RET_404(Server *server, int conn){
+    send(conn, H_HTTP_404, strlen(H_HTTP_404), 0);
+    send(conn, M_HTTP_404, strlen(M_HTTP_404), 0);
+    close(conn);
+    server_info(server, "Connection closed");
+}
 
-    send(args->client_sock_fd, server->data_to_serve, server->data_len, 0);
+void new_key_value(str_builder *builder, const char *key, string value){
+    builder_append_cstr(builder, key);
+    builder_append(builder, value);
+    builder_append_cstr(builder, "\r\n");
+}
+
+void dispatch(dispatch_args *args) {
+    int conn = args->client_sock_fd;
+    Server *server = args->server;
+
+    char buf[1024];
+    size_t sz = recv(conn, buf, 1024, 0);
+    if (sz == 0 || sz == -1) {
+        close(conn);
+        return;
+    }
+    string request = string_from_buf(buf, sz);
+
+    string req_type = string_pop_delimit(&request, slit(" "));
+    if (string_is_strerr(req_type) || !string_equals(req_type, slit("GET"))) {
+        server_warn(server, "Request is not GET");
+        RET_404(server, conn);
+        return;
+    }
+
+    string loc = string_pop_delimit(&request, slit(" "));
+    if (string_is_strerr(req_type)) {
+        server_warn(server, "Malformed request");
+        RET_404(server, conn);
+        return;
+    }
+
+    str_builder resp = builder_make(64);
+    builder_append_cstr(&resp, H_HTTP_200);
+
+    CachedFile tmp;
+    CachedFile *read_f = &tmp;
+    char buf_it[8000]; // TODO: this is bad... ; implement route assignment
+    if (string_equals(loc, slit("/__debug__"))) {
+        char *buf_tmp = buf_it;
+        read_f->path = slit("/__debug__");
+        memcpy(buf_it, cooltext.cstr, cooltext.len);
+        buf_tmp += cooltext.len;
+        buf_tmp += snprintf(buf_tmp, 1024, "Small webserver written in pure C!\n\n");
+
+        buf_tmp += snprintf(buf_tmp, 1024, "Currently cached files: \n");
+        for (int i = 0; i < CACHE_RING_BUFFER_LEN; i++)
+        {
+            buf_tmp += snprintf(buf_tmp, 1024, "    %s w/ %zu bytes loaded\n", server->cache[i].path, server->cache[i].len);
+        }
+
+        buf_tmp += snprintf(buf_tmp, 1024, "\nThere isn't much debug information anyway...\n");
+
+        read_f->data = buf_it;
+        read_f->len = strlen(buf_it);
+    } else {
+        string file_path;
+        if (string_equals(loc, slit("/"))) {
+            file_path = slit("index.html");
+        } else {
+            if (loc.cstr[0] != '/') {
+                server_warn(server, "Malformed location request");
+                RET_404(server, conn);
+                free(resp.data);
+                return;
+            }
+
+            file_path = string_substr(loc,1,loc.len);
+        }
+        
+        read_f = server_get_file(server, file_path);
+
+        if (read_f == NULL){
+            server_warn(server, "Could not find file, requested %s",file_path.cstr);
+            RET_404(server, conn);
+            free(resp.data);
+            return;
+        }
+
+        server_info(server, "Requested '%s', serving '%s'",loc.cstr, file_path.cstr);
+        
+        string mimetype = match_file_type(file_path);
+        new_key_value(&resp, "content-type: ", mimetype);
+    }
     
-    close(args->client_sock_fd);
-    info("Connection over");
+    
+    // Start creating response
+    builder_append_cstr(&resp, "\r\n");
+    send(conn, resp.data, resp.len, 0);
+    send(conn, read_f->data, read_f->len, 0);
+    free(resp.data);
+
+    close(conn);
+    server_info(server, "Connection closed");
 }
 
 void run(Server *server) {
     for(;;) {
         int client_sock_fd = accept(server->sock_fd, NULL, NULL);
         if (client_sock_fd < 0) {
-            warn("Failed to accept a connection");
+            server_warn(server, "Failed to accept a connection");
             continue;
         }
         dispatch_args *args = malloc(sizeof(dispatch_args));
         args->server = server;
         args->client_sock_fd = client_sock_fd;
+        server_info(server, "Dispatched handler on new connection");
         pthread_create(&args->tid, NULL, (void*)dispatch, args);
         pthread_detach(args->tid);
     }
 }
 
-void serve_file(Server *server, const char *filepath){
-	FILE *fp = fopen(filepath, "r");
-	assert(fp != NULL && "failed to open file!");
-	assert(fseek(fp, 0, SEEK_END) == 0);
-	
-	int64_t len = ftell(fp);
-	assert(len > 0);
-
-	rewind(fp);
-
-	uint8_t *buffer = malloc(len);
-	assert(buffer);
-	size_t elms = fread(buffer, 1, len, fp);
-
-	fclose(fp);
-
-	if (elms == 0 && len > 0) {
-		assert(0);
-	}
-
-	assert(elms != 0 && "cannot read empty file!");
-
-	server->data_to_serve = buffer;
-    server->data_len = len;
-}
+/* curl -s -D - http://localhost:8080/strings.c -o /dev/null | bat -A
+ * > mimetype text/plain
+ * curl -s -D - http://localhost:8080/ -o /dev/null | bat -A
+ * > mimetype text/html
+ */
 
 int main()
 {
     Server server = create_server(8080, INADDR_LOOPBACK);
-    serve_file(&server, "index.html");
     run(&server);
 }
+
+/* 
+ * TODO:
+ *   route_add(server,"/debug",server_cb);
+ *   route_add(server,"/test/a",server_cb);
+ *   static_serve(server, ".");
+ */
+
+/* 
+ * inside the route adding callback
+ * pass in a string builder
+ * and respond with the string builder's contents
+ */
+
+/* 
+ * TODO:
+ *   use vnsprintf or whatever to get a length,
+ *   then use that inside a string builder to reserve 
+ *   chars and use a printf implementation that you 
+ *   can append with
+ */
+
+const char * H_HTTP_200 = "HTTP/1.1 200 OK\r\n";
+const char * H_HTTP_404 = "HTTP/1.0 404 Not Found\r\n\r\n";
+const char * M_HTTP_404 = "<h1>404 not found!</h1>";
