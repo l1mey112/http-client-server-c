@@ -47,11 +47,17 @@ Server create_server(int port, uint32_t bind_addr){
     //  INADDR_LOOPBACK = 127.0.0.1
     //  INADDR_ANY      =   0.0.0.0
 
+    const int a = 0;
+    if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &a, sizeof(a)) < 0 ||
+        setsockopt(server_fd, SOL_SOCKET, SO_REUSEPORT, &a, sizeof(a)) < 0 )
+        fatal("Server failed to set socket options");
+
     if (bind(server_fd, (struct sockaddr *) &server_address, sizeof(server_address)) < 0)
         fatal("Server failed to bind to port %d", port);
 
     if (listen(server_fd, BACKLOG) < 0)
         fatal("Server failed to start listening for connections");
+    
     Server server = {
         .address = server_address,
         .sock_fd = server_fd,
@@ -117,24 +123,22 @@ void dispatch(dispatch_args *args) {
 
     CachedFile tmp;
     CachedFile *read_f = &tmp;
-    char buf_it[8000]; // TODO: this is bad... ; implement route assignment
     if (string_equals(loc, slit("/__debug__"))) {
-        char *buf_tmp = buf_it;
         read_f->path = slit("/__debug__");
-        memcpy(buf_it, cooltext.cstr, cooltext.len);
-        buf_tmp += cooltext.len;
-        buf_tmp += snprintf(buf_tmp, 1024, "Small webserver written in pure C!\n\n");
-
-        buf_tmp += snprintf(buf_tmp, 1024, "Currently cached files: \n");
+        str_builder b = builder_make(cooltext.len);
+        builder_append_buf(&b, cooltext.cstr, cooltext.len);
+        
+        builder_printf(&b, "Small webserver written in pure C!\n\n");
+        builder_printf(&b, "Currently cached files: \n");
         for (int i = 0; i < CACHE_RING_BUFFER_LEN; i++)
         {
-            buf_tmp += snprintf(buf_tmp, 1024, "    %s w/ %zu bytes loaded\n", server->cache[i].path, server->cache[i].len);
+            builder_printf(&b, "    %s w/ %zu bytes loaded\n", server->cache[i].path, server->cache[i].len);
         }
 
-        buf_tmp += snprintf(buf_tmp, 1024, "\nThere isn't much debug information anyway...\n");
+        builder_printf(&b, "\nThere isn't much debug information anyway...\n");
 
-        read_f->data = buf_it;
-        read_f->len = strlen(buf_it);
+        read_f->data = b.data;
+        read_f->len = b.len;
     } else {
         string file_path;
         if (string_equals(loc, slit("/"))) {
@@ -192,7 +196,8 @@ void run(Server *server) {
     }
 }
 
-/* curl -s -D - http://localhost:8080/strings.c -o /dev/null | bat -A
+/* 
+ * curl -s -D - http://localhost:8080/strings.c -o /dev/null | bat -A
  * > mimetype text/plain
  * curl -s -D - http://localhost:8080/ -o /dev/null | bat -A
  * > mimetype text/html
@@ -203,6 +208,10 @@ int main()
     Server server = create_server(8080, INADDR_LOOPBACK);
     run(&server);
 }
+
+/*
+ * echo "1" | doas tee /proc/sys/net/ipv4/tcp_tw_reuse 
+ */
 
 /* 
  * TODO:

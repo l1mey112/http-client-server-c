@@ -42,5 +42,6 @@ void builder_append(str_builder *builder, string a);
 void builder_append_cstr(str_builder *builder, const char *a);
 void builder_append_buf(str_builder *builder, char *a, size_t len);
 string builder_tostr(str_builder *builder);
+void builder_printf(str_builder *builder, const char* format, ...);
 
 #endif

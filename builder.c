@@ -41,6 +41,16 @@ void builder_append_buf(str_builder *builder, char *a, size_t len){
 	builder->len += len;
 }
 
+void builder_printf(str_builder *builder, const char* format, ...){
+	__builtin_va_list args;
+	__builtin_va_start (args, format);
+	int size = vsnprintf(NULL, 0, format, args) - 1; // dont write NULL character
+	builder_ensure_cap(builder, size);
+	snprintf(builder->data + builder->len, size, format, args);
+	__builtin_va_end (args);
+	builder->len += size;
+}
+
 string builder_tostr(str_builder *builder){
 	string ret = {0};
 	ret.len  = builder->len;
@@ -54,3 +64,5 @@ string builder_tostr(str_builder *builder){
 	MSG("returned a string from a builder, freed builder",0);
 	return ret;
 }
+
+// create builder then handle routes and files
