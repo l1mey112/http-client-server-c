@@ -6,4 +6,4 @@ run: a.out
 	@./a.out
 
 a.out: $(CFILES) $(HFILES) Makefile
-	@gcc -ggdb $(CFILES)
+	@tcc -std=gnu -rdynamic -bt10 -ggdb $(CFILES)

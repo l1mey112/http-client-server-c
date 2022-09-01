@@ -1,6 +1,6 @@
 #include "server.h"
 
-const string mimetypes[] = {
+const string mimetypes[mimetypes_len] = {
 	slit(".aac"), slit("audio/aac"),
 	slit(".avi"), slit("video/x-msvideo"),
 	slit(".azw"), slit("application/vnd.amazon.ebook"),
@@ -61,8 +61,8 @@ const string mimetypes[] = {
 	slit(".7z"), slit("application/x-7z-compressed")
 };
 
-static_assert(sizeof(mimetypes) / sizeof(string) % 2 == 0, "Mimetypes list must be even");
-static_assert(sizeof(mimetypes) / sizeof(string) == mimetypes_len, "Update mimetypes length");
+// static_assert(sizeof(mimetypes) / sizeof(string) % 2 == 0, "Mimetypes list must be even");
+// static_assert(sizeof(mimetypes) / sizeof(string) == mimetypes_len, "Update mimetypes length");
 
 #define default_mimetype slit("text/plain")
 

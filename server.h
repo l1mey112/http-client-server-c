@@ -4,6 +4,7 @@
 #include <pthread.h>
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <netinet/in.h>
 #include <assert.h>
 #include <stdio.h>
@@ -14,6 +15,7 @@
 #include <netdb.h>
 #include <arpa/inet.h>
 #include <stdbool.h>
+#include <signal.h>
 
 #include "strings.h"
 
@@ -32,7 +34,7 @@ typedef struct Server Server;
 typedef bool (*route_cb)(Server *server, str_builder *resp, str_builder *headers);
 
 typedef struct {
-    const char *route;
+    string route;
     route_cb cb;
 } Route;
 

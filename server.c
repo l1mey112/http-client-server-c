@@ -147,8 +147,8 @@ void dispatch(dispatch_args *args) {
     bool found_route = false;
     for (int i = 0; i < server->route_amt; i++)
     {
-        if (strncmp(server->routes[i].route, loc.cstr, loc.len) == 0) {
-            server_info(server, "Executing route '%s'", server->routes->route);
+        if (string_equals(server->routes[i].route, loc)) {
+            server_info(server, "Executing route '%s'", server->routes[i].route);
 
             // avoid race conditions when accessing the same data
             pthread_mutex_lock(&server->slock); 
@@ -156,7 +156,7 @@ void dispatch(dispatch_args *args) {
             pthread_mutex_unlock(&server->slock);
 
             if (!success) {
-                server_warn(server, "Route '%s' failed", server->routes->route);
+                server_warn(server, "Route '%s' failed", server->routes[i].route);
                 SEND_500;
                 goto EXIT;
             }
@@ -175,7 +175,7 @@ void dispatch(dispatch_args *args) {
     if (!found_route) {
         string file_path = server->webroot;
         if (string_equals(loc, slit("/"))) {
-            file_path = join_path(file_path, slit("index.html"));
+            file_path = join_path(file_path, slit("/index.html"));
         } else {
             if (loc.cstr[0] != '/') {
                 server_warn(server, "Malformed location request");
@@ -244,10 +244,15 @@ void server_run(Server *server) {
     }
 }
 
-// UNUSED FOR NOW, UNTIL I GET PROPER PATH NORMALISATION/HANDLING
 void server_serve_content(Server *server, const char *fp) {
-    // TODO: make sure path is a directory, can be found
-    //       and is not a file!
+    struct stat path_stat;
+    lstat(fp, &path_stat);
+    if (!S_ISDIR(path_stat.st_mode)) {
+        server_fatal(server, "Path '%s' is not a directory and so cannot be the webroot", fp);
+    }
+    if (access(fp, R_OK) < 0){
+        server_fatal(server, "Webroot at path '%s' cannot be read", fp);
+    }
 
     server->webroot = (string){.cstr = (char *)fp, .len = strlen(fp), .is_literal = 1};
 }
@@ -256,20 +261,12 @@ void server_assign_route(Server *server, const char *route, route_cb cb) {
     // TODO: check for duplicates,
     //       check for an absolute route (eg "/hello")
     //       make as dynarray
-    
     server->routes[server->route_amt++] = (Route) {
-        .route = route,
+        .route = (string){(char *)route, (strlen(route)), ((int)1)},
         .cb = cb
     };
     assert(server->route_amt < ROUTES_CAP);
 }
-
-/* 
- * curl -s -D - http://localhost:8080/strings.c -o /dev/null | bat -A
- * > mimetype text/plain
- * curl -s -D - http://localhost:8080/ -o /dev/null | bat -A
- * > mimetype text/html
- */
 
 void new_header(str_builder *builder, const char *key, const char *value) {
     builder_append_cstr(builder, key);
@@ -279,24 +276,53 @@ void new_header(str_builder *builder, const char *key, const char *value) {
 
 bool debug_route(Server *server, str_builder *resp, str_builder *headers)
 {
-    new_header(headers, "Content-Type: ", "text/plain");
+    new_header(headers, "Content-Type: ", "text/html");
 
+    builder_append_cstr(resp, "<h1>Debug panel</h1>"
+                              "<pre>");
     builder_append_buf(resp, cooltext.cstr, cooltext.len);
-    builder_append_cstr(resp, "Small webserver written in pure C!\n\n");
-    builder_append_cstr(resp, "Routes binded: \n");
+    builder_append_cstr(resp, "</pre>"
+                              "<h1>Small webserver written in pure C!</h1>"
+                              "<h3>Routes binded:</h3>"
+                              "<ul>");
     for (int i = 0; i < server->route_amt; i++)
     {
-        builder_append_cstr(resp, "    ");
-        builder_append_cstr(resp, server->routes[i].route);
+        builder_append_cstr(resp, "<li><a href=\"");
+        builder_append(resp, server->routes[i].route);
+        builder_append_cstr(resp, "\">");
+        builder_append(resp, server->routes[i].route);
         // for SOME reason doing a printf with the route made the result unsusable
-        builder_printf(resp, "\n");
+        builder_printf(resp, "</a></li>");
     }
-    builder_printf(resp, "Currently cached files: \n");
+    builder_append_cstr(resp, "</ul>"
+                              "<h3>Currently cached files:</h3>"
+                              "<ul>");
     for (int i = 0; i < CACHE_RING_BUFFER_LEN; i++)
     {
         if (server->cache[i].data)
-            builder_printf(resp, "    %s w/ %zu bytes loaded\n", server->cache[i].path.cstr, server->cache[i].len);
+            builder_printf(resp, "<li>%s w/ %zu bytes loaded</li>", server->cache[i].path.cstr, server->cache[i].len);
     }
+    builder_append_cstr(resp, "</ul>");
+
+    return true;
+}
+
+bool flush_caches_route(Server *server, str_builder *resp, str_builder *headers)
+{
+    for (int i = 0; i < CACHE_RING_BUFFER_LEN; i++)
+    {
+        if (server->cache[i].data){
+            free(server->cache[i].data);
+            string_free(&server->cache[i].path);
+
+            server->cache[server->cache_position].data = NULL;
+            server->cache[i].path = (string){0};
+        }
+    }
+    
+    builder_append_cstr(resp, 
+        "<h1>Flushed cache</h1>"
+        "<a href=\"/__debug__\">Debug panel</a>");
 
     return true;
 }
@@ -314,7 +340,7 @@ bool route_jpg(Server *s, str_builder *resp, str_builder *headers)
 
     char *ret; int64_t len;
     
-    if (!read_file("among_drip.jpg", &ret, &len)) return false;
+    if (!read_file("www/among_drip.jpg", &ret, &len)) return false;
 
     builder_append_buf(resp, ret, len);
     free(ret);
@@ -322,15 +348,26 @@ bool route_jpg(Server *s, str_builder *resp, str_builder *headers)
     return true;
 }
 
+// -bt10 for backtraces
+int tcc_backtrace(const char *fmt, ...);
+
+void segfault_handler(int sig) {
+    fputs("sig 11 - segmentation fault\n",stderr);
+    tcc_backtrace("Backtrace");
+    exit(139);
+}
+
 int main() {
-    
+    signal(11, segfault_handler);
+
     Server s;
 
-    s = server_create(8068, INADDR_LOOPBACK); // 127.0.0.1:8080
-        server_serve_content(&s, "www/");
+    s = server_create(2594, INADDR_LOOPBACK); // 127.0.0.1:8080
+        server_serve_content(&s, "www");
         server_assign_route(&s, "/hello", route_html);
         server_assign_route(&s, "/among", route_jpg);
         server_assign_route(&s, "/__debug__", debug_route);
+        server_assign_route(&s, "/__flush_caches__", flush_caches_route);
         server_run(&s);
 }
 
@@ -339,22 +376,8 @@ int main() {
  */
 
 /* 
- * TODO:
- *   route_add(server,"/debug",server_cb);
- *   route_add(server,"/test/a",server_cb);
- *   static_serve(server, ".");
- */
-
-/* 
- * inside the route adding callback
- * pass in a string builder
- * and respond with the string builder's contents
- */
-
-/* 
- * TODO:
- *   use vnsprintf or whatever to get a length,
- *   then use that inside a string builder to reserve 
- *   chars and use a printf implementation that you 
- *   can append with
+ * curl -s -D - http://localhost:8080/strings.c -o /dev/null | bat -A
+ * > mimetype text/plain
+ * curl -s -D - http://localhost:8080/ -o /dev/null | bat -A
+ * > mimetype text/html
  */
