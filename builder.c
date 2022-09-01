@@ -44,9 +44,12 @@ void builder_append_buf(str_builder *builder, char *a, size_t len){
 void builder_printf(str_builder *builder, const char* format, ...){
 	__builtin_va_list args;
 	__builtin_va_start (args, format);
-	int size = vsnprintf(NULL, 0, format, args) - 1; // dont write NULL character
-	builder_ensure_cap(builder, size);
-	snprintf(builder->data + builder->len, size, format, args);
+	int max_size = snprintf(NULL, 0, format, args); 
+	// snprintf returns max size you might need, sprintf returns amount actually written
+	builder_ensure_cap(builder, max_size + 1);
+	// reserve space for \0, avoids a buffer overflow. we don't use it anyway
+	int size = sprintf(builder->data + builder->len, format, args);
+	// yeah uhh do not pass in max_size to sprintf, it will chop off the last char and put a \0
 	__builtin_va_end (args);
 	builder->len += size;
 }
@@ -64,5 +67,3 @@ string builder_tostr(str_builder *builder){
 	MSG("returned a string from a builder, freed builder",0);
 	return ret;
 }
-
-// create builder then handle routes and files

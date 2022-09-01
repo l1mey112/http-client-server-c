@@ -17,10 +17,6 @@
 
 #include "strings.h"
 
-extern const char * H_HTTP_200;
-extern const char * H_HTTP_404;
-extern const char * M_HTTP_404;
-
 #define CACHE_RING_BUFFER_LEN 4
 
 typedef struct {
@@ -29,14 +25,34 @@ typedef struct {
     int64_t len;
 } CachedFile;
 
+#define ROUTES_CAP 12
+
+typedef struct Server Server;
+
+typedef bool (*route_cb)(Server *server, str_builder *resp, str_builder *headers);
+
 typedef struct {
+    const char *route;
+    route_cb cb;
+} Route;
+
+struct Server {
     struct sockaddr_in address;
     int sock_fd;
+    int port;
+
+    pthread_mutex_t log_lock; 
+    // so logging on different threads don't mesh together
 
     pthread_mutex_t slock;
     CachedFile cache[CACHE_RING_BUFFER_LEN];
     int cache_position;
-} Server;
+
+    Route routes[ROUTES_CAP]; // should be a dynarray later
+    int route_amt;
+
+    string webroot; // is NULL initially, to not serve static files
+};
 
 void fatal( const char* format, ...);
 void server_fatal( Server *server, const char* format, ...);
