@@ -64,8 +64,6 @@ const string mimetypes[mimetypes_len] = {
 // static_assert(sizeof(mimetypes) / sizeof(string) % 2 == 0, "Mimetypes list must be even");
 // static_assert(sizeof(mimetypes) / sizeof(string) == mimetypes_len, "Update mimetypes length");
 
-#define default_mimetype slit("text/plain")
-
 string match_file_type(string path){
 	int last_dot = -1;
 
@@ -74,16 +72,16 @@ string match_file_type(string path){
 		if (path.cstr[i] == '.') last_dot = i;
 	}
 	if (last_dot == -1)
-		return default_mimetype;
+		return strerr;
 	
 	string path_ext = string_substr(path, last_dot, path.len);
 	if (path_ext.len == 1)
-		return default_mimetype;
+		return strerr;
 
 	for (int i = 0; i < mimetypes_len; i += 2)
 	{
 		if (string_equals(path_ext,mimetypes[i]))
 			return mimetypes[i+1];
 	}
-	return default_mimetype;
+	return strerr;
 }

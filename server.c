@@ -7,9 +7,6 @@
  * 4. accept() connection and send() or receive() data to/from connected sockets
  */
 
-#define SIZE 1024
-#define BACKLOG 10  // Passed to listen()
-
 string cooltext = slit(
 " _____    _     __    __          __ _  __ __ _ \\    / __ _ \n"
 "(_  | |V||_)|  |_    /     \\    /|_ |_)(_ |_ |_) \\  / |_ |_)\n"
@@ -54,18 +51,18 @@ Server server_create(int port, uint32_t bind_addr){
     if (bind(server_fd, (struct sockaddr *) &server_address, sizeof(server_address)) < 0)
         fatal("Server failed to bind to port %d", port);
 
-    if (listen(server_fd, BACKLOG) < 0)
+    if (listen(server_fd, 10) < 0)
         fatal("Server failed to start listening for connections");
     
     Server server = {
         .address = server_address,
         .sock_fd = server_fd,
         .cache_position = 0,
-        .cache = {0},
         .webroot.cstr = NULL,
         .route_amt = 0,
         .port = port
     };
+    memset(&server.cache,0, sizeof(server.cache));
 
     if (pthread_mutex_init(&server.log_lock, NULL) != 0)
         fatal("Mutex creation failed");
@@ -97,11 +94,6 @@ const char * M_HTTP_500 = "<h1>500 Internal Server Error</h1>";
 #define SEND_400 send(conn, H_HTTP_400, strlen(H_HTTP_400), 0); send(conn, M_HTTP_400, strlen(M_HTTP_400), 0)
 #define SEND_500 send(conn, H_HTTP_500, strlen(H_HTTP_500), 0); send(conn, M_HTTP_500, strlen(M_HTTP_500), 0)
 
-// assumes string b has a / preceeding it
-// printf("%s\n",
-//     join_path(slit("hello/////"), 
-//     slit("/argh")).cstr
-// );
 string join_path(string a, string b){
     int right = a.len;
 	for (char *ptr = a.cstr + a.len - 1; *ptr == '/'; ptr--)
@@ -197,8 +189,24 @@ void dispatch(dispatch_args *args) {
 
         server_info(server, "Requested '%s', serving '%s'",loc.cstr, file_path.cstr);
         
+        // TODO: maybe cache mimetype with file?
+
         // Apply mimetype header
         string mimetype = match_file_type(file_path);
+        // Mimetype not found, search file for mimetype
+        if (string_is_strerr(mimetype))
+        {
+            mimetype = slit("text/plain");
+            //printf("%d\n\n",file->len);
+            // TODO: THIS DOES NOT WORK2
+            /* for (int i = 0; i < MIN(100,file->len); i++) {
+                if (!isprint(file->data[i])){
+                    mimetype = slit("application/octet-stream");
+                    break;
+                }
+            } */
+        }
+
         builder_append_cstr(&headers, "Content-Type: ");
         builder_append(&headers, mimetype);
         builder_append_cstr(&headers, "\r\n");
@@ -212,14 +220,29 @@ void dispatch(dispatch_args *args) {
     } else {
         send(conn, resp.data, resp.len, 0);
     }
-    
-EXIT: // absolute lowest hanging fruit, do better next time
+
+//  this may sound like a cope, but anyway...
+//  
+//  most horrible C programmers who use goto are doing it in 
+//  replacement of control flow keywords like if, for and while.
+//  still, the goto keyword is useful as a break statement that 
+//  exits multiple loops, or as a way of concentrating cleanup code 
+//  in a single place in a function even when there are multiple 
+//  ways to terminate the function. this is exactly what i am using 
+//  the goto keyword for.
+//  
+//  sure, goto should be "avoided at all costs!!" when you are just
+//  getting to learn C or C++, there are better options than a goto.
+//  
+//  it still has it's place in C if you know where it's applicable
+EXIT: 
     close(conn);
     server_info(server, "Connection closed");
 
     free(resp.data);
     free(headers.data);
     string_free(&request);
+    free(args);
 }
 
 void server_run(Server *server) {
@@ -236,6 +259,7 @@ void server_run(Server *server) {
             continue;
         }
         dispatch_args *args = malloc(sizeof(dispatch_args));
+        assert(args);
         args->server = server;
         args->client_sock_fd = client_sock_fd;
         server_info(server, "Dispatched handler on new connection");
@@ -278,8 +302,7 @@ bool debug_route(Server *server, str_builder *resp, str_builder *headers)
 {
     new_header(headers, "Content-Type: ", "text/html");
 
-    builder_append_cstr(resp, "<h1>Debug panel</h1>"
-                              "<pre>");
+    builder_append_cstr(resp, "<pre>");
     builder_append_buf(resp, cooltext.cstr, cooltext.len);
     builder_append_cstr(resp, "</pre>"
                               "<h1>Small webserver written in pure C!</h1>"
@@ -291,7 +314,7 @@ bool debug_route(Server *server, str_builder *resp, str_builder *headers)
         builder_append(resp, server->routes[i].route);
         builder_append_cstr(resp, "\">");
         builder_append(resp, server->routes[i].route);
-        // for SOME reason doing a printf with the route made the result unsusable
+        // im pretty sure its just printf making results unsusable
         builder_printf(resp, "</a></li>");
     }
     builder_append_cstr(resp, "</ul>"
@@ -299,8 +322,12 @@ bool debug_route(Server *server, str_builder *resp, str_builder *headers)
                               "<ul>");
     for (int i = 0; i < CACHE_RING_BUFFER_LEN; i++)
     {
-        if (server->cache[i].data)
-            builder_printf(resp, "<li>%s w/ %zu bytes loaded</li>", server->cache[i].path.cstr, server->cache[i].len);
+        if (server->cache[i].data) {
+            assert(!string_is_strerr(server->cache[i].path));
+            builder_append_cstr(resp, "<li>");
+            builder_append(resp, server->cache[i].path);
+            builder_append_cstr(resp, "</li>");
+        }
     }
     builder_append_cstr(resp, "</ul>");
 
@@ -314,8 +341,7 @@ bool flush_caches_route(Server *server, str_builder *resp, str_builder *headers)
         if (server->cache[i].data){
             free(server->cache[i].data);
             string_free(&server->cache[i].path);
-
-            server->cache[server->cache_position].data = NULL;
+            server->cache[i].data = NULL;
             server->cache[i].path = (string){0};
         }
     }
@@ -348,6 +374,7 @@ bool route_jpg(Server *s, str_builder *resp, str_builder *headers)
     return true;
 }
 
+#ifdef __TINYC__
 // -bt10 for backtraces
 int tcc_backtrace(const char *fmt, ...);
 
@@ -356,13 +383,15 @@ void segfault_handler(int sig) {
     tcc_backtrace("Backtrace");
     exit(139);
 }
+#endif
 
 int main() {
+#ifdef __TINYC__
     signal(11, segfault_handler);
-
+#endif
     Server s;
 
-    s = server_create(2594, INADDR_LOOPBACK); // 127.0.0.1:8080
+    s = server_create(2581, INADDR_LOOPBACK); // 127.0.0.1:8080
         server_serve_content(&s, "www");
         server_assign_route(&s, "/hello", route_html);
         server_assign_route(&s, "/among", route_jpg);
@@ -374,6 +403,9 @@ int main() {
 /*
  * echo "1" | doas tee /proc/sys/net/ipv4/tcp_tw_reuse 
  */
+
+// b abort
+// thread apply all bt -full
 
 /* 
  * curl -s -D - http://localhost:8080/strings.c -o /dev/null | bat -A

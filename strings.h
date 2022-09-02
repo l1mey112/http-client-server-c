@@ -44,4 +44,7 @@ void builder_append_buf(str_builder *builder, char *a, size_t len);
 string builder_tostr(str_builder *builder);
 void builder_printf(str_builder *builder, const char* format, ...);
 
+#define MIN(X, Y) (((X) < (Y)) ? (X) : (Y))
+#define MAX(X, Y) (((X) > (Y)) ? (X) : (Y))
+
 #endif

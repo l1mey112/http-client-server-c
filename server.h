@@ -16,6 +16,7 @@
 #include <arpa/inet.h>
 #include <stdbool.h>
 #include <signal.h>
+#include <ctype.h>
 
 #include "strings.h"
 

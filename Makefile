@@ -6,4 +6,5 @@ run: a.out
 	@./a.out
 
 a.out: $(CFILES) $(HFILES) Makefile
-	@tcc -std=gnu -rdynamic -bt10 -ggdb $(CFILES)
+#	@gcc -Wall -fsanitize=address,pointer-compare,leak,undefined,pointer-overflow -fanalyzer -ggdb $(CFILES)
+	@tcc -Wall -rdynamic -fno-inline -g -bt25 -ggdb $(CFILES)

@@ -18,6 +18,7 @@ string string_from_buf(char *buf, size_t len){
 		.len = len,
 		.is_literal = 0
 	};
+	assert(ret.cstr);
 	memcpy(ret.cstr, buf, len);
 	ret.cstr[len] = 0;
 	return ret;
@@ -29,6 +30,7 @@ string string_dup(string a){
 		.len = a.len,
 		.is_literal = 0
 	};
+	assert(ret.cstr);
 	memcpy(ret.cstr, a.cstr, a.len);
 	ret.cstr[a.len] = 0;
 	return ret;
@@ -59,8 +61,6 @@ string string_concat(string a, string b){
 	
 } */
 
-#define MIN(X, Y) (((X) < (Y)) ? (X) : (Y))
-#define MAX(X, Y) (((X) > (Y)) ? (X) : (Y))
 string string_substr(string a, int start, int end){
 	assert(start < end); // also makes sure len > 0
 	start = MAX(start, 0);
