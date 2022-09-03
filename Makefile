@@ -6,5 +6,6 @@ run: a.out
 	@./a.out
 
 a.out: $(CFILES) $(HFILES) Makefile
-#	@gcc -Wall -fsanitize=address,pointer-compare,leak,undefined,pointer-overflow -fanalyzer -ggdb $(CFILES)
-	@tcc -Wall -rdynamic -fno-inline -g -bt25 -ggdb $(CFILES)
+	@gcc -static-libasan -Wall -ggdb $(CFILES)
+#	-fsanitize=address,pointer-compare,leak,undefined,pointer-overflow -fanalyzer
+#	@tcc -Wall -rdynamic -fno-inline -g -bt25 -ggdb $(CFILES)

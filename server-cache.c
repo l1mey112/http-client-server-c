@@ -11,7 +11,7 @@ CachedFile *server_get_file(Server *server, string file_path){
 		}
 	}
 	
-	pthread_mutex_lock(&server->log_lock);
+	pthread_mutex_lock(&server->slock);
 	// No file in cache, read it and insert into ring buffer
 	if (server->cache[server->cache_position].data){
 		free(server->cache[server->cache_position].data);
@@ -22,19 +22,23 @@ CachedFile *server_get_file(Server *server, string file_path){
                    &server->cache[server->cache_position].data, 
 		           &server->cache[server->cache_position].len)
 	) {
-		pthread_mutex_unlock(&server->log_lock);
+		server->cache[server->cache_position].data = NULL;
+		server->cache[server->cache_position].len = 0;
+		pthread_mutex_unlock(&server->slock);
 		return NULL;
 	}
 
 	server->cache[server->cache_position].path = file_path;
 	
+	int pos = server->cache_position;
+
 	// Circle buffer wrap
 	server->cache_position++;
 	server->cache_position %= CACHE_RING_BUFFER_LEN;
 
-	pthread_mutex_unlock(&server->log_lock);
+	pthread_mutex_unlock(&server->slock);
 	server_info(server, "Read and cached file '%s'",file_path.cstr);
-	return &server->cache[server->cache_position];
+	return &server->cache[pos];
 }
 
 bool read_file(const char *filepath, char **ret, int64_t *len_en){

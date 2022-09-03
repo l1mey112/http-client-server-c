@@ -40,3 +40,14 @@ void server_info( Server *server, const char* format, ... ) {
 	fprintf( stderr, "\n" );
 	pthread_mutex_unlock(&server->log_lock);
 }
+
+void server_errno( Server *server, const char* format, ... ) {
+	pthread_mutex_lock(&server->log_lock);
+	__builtin_va_list args;
+	fprintf( stderr, "ERRNO: " );
+	__builtin_va_start( args, format );
+	vfprintf( stderr, format, args );
+	__builtin_va_end( args );
+	perror("\nERRMSG");
+	pthread_mutex_unlock(&server->log_lock);
+}

@@ -1,5 +1,7 @@
 #include "strings.h"
 
+#include <stdarg.h>
+
 str_builder builder_make(uint32_t size){
 	MSG("created str builder with size %u",size);
 	return (str_builder){
@@ -41,17 +43,23 @@ void builder_append_buf(str_builder *builder, char *a, size_t len){
 	builder->len += len;
 }
 
+/* Note to self, keep usage of the variable argument stack
+   isolated or undefined behavior occurs.
+   
+   This is "learning by doing" after all!                  */
+   
 void builder_printf(str_builder *builder, const char* format, ...){
-	__builtin_va_list args;
-	__builtin_va_start (args, format);
-	int max_size = snprintf(NULL, 0, format, args); 
-	// snprintf returns max size you might need, sprintf returns amount actually written
-	builder_ensure_cap(builder, max_size + 1);
-	// reserve space for \0, avoids a buffer overflow. we don't use it anyway
-	int size = sprintf(builder->data + builder->len, format, args);
-	// yeah uhh do not pass in max_size to sprintf, it will chop off the last char and put a \0
-	__builtin_va_end (args);
-	builder->len += size;
+	va_list args;
+	va_start (args, format);
+		int n = vsnprintf(NULL, 0, format, args);
+	va_end(args);
+
+	builder_ensure_cap(builder, n);
+
+	va_start (args, format);
+		vsprintf(builder->data + builder->len, format, args);
+	va_end (args);
+	builder->len += n;
 }
 
 string builder_tostr(str_builder *builder){

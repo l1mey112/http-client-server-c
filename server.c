@@ -1,17 +1,5 @@
 #include "server.h"
 
-/* 
- * 1. Create socket with socket() call
- * 2. bind() this to an IP and port where it can
- * 3. listen() for connections
- * 4. accept() connection and send() or receive() data to/from connected sockets
- */
-
-string cooltext = slit(
-" _____    _     __    __          __ _  __ __ _ \\    / __ _ \n"
-"(_  | |V||_)|  |_    /     \\    /|_ |_)(_ |_ |_) \\  / |_ |_)\n"
-"__)_|_| ||  |__|__   \\__    \\/\\/ |__|_)__)|__| \\  \\/  |__| \\\n\n");
-
 void report(Server *server, const struct sockaddr_in *serverAddress)
 {
     char hostBuffer[INET6_ADDRSTRLEN];
@@ -188,8 +176,7 @@ void dispatch(dispatch_args *args) {
         }
 
         server_info(server, "Requested '%s', serving '%s'",loc.cstr, file_path.cstr);
-        
-        // TODO: maybe cache mimetype with file?
+        // Maybe cache mimetype with file?
 
         // Apply mimetype header
         string mimetype = match_file_type(file_path);
@@ -197,28 +184,33 @@ void dispatch(dispatch_args *args) {
         if (string_is_strerr(mimetype))
         {
             mimetype = slit("text/plain");
-            //printf("%d\n\n",file->len);
-            // TODO: THIS DOES NOT WORK2
-            /* for (int i = 0; i < MIN(100,file->len); i++) {
-                if (!isprint(file->data[i])){
+            // Search the first 50 chars for non printable characters
+            for (int i = 0; i < MIN(50,file->len); i++) {
+                if (!(isprint(file->data[i]) || isspace(file->data[i]))){
                     mimetype = slit("application/octet-stream");
                     break;
                 }
-            } */
+            }
         }
+
+        string_free(&file_path);
 
         builder_append_cstr(&headers, "Content-Type: ");
         builder_append(&headers, mimetype);
         builder_append_cstr(&headers, "\r\n");
     }
-
     builder_append_cstr(&headers, "\r\n");
 
-    send(conn, headers.data, headers.len, 0);
+    bool failed = false;
+
+    failed |= send(conn, headers.data, headers.len, 0) == -1;
     if (file) {
-        send(conn, file->data, file->len, 0);
+        failed |= send(conn, file->data, file->len, 0) == -1;
     } else {
-        send(conn, resp.data, resp.len, 0);
+        failed |= send(conn, resp.data, resp.len, 0) == -1;
+    }
+    if (failed) {
+        server_errno(server, "Sending to socket failed");
     }
 
 //  this may sound like a cope, but anyway...
@@ -242,6 +234,8 @@ EXIT:
     free(resp.data);
     free(headers.data);
     string_free(&request);
+    string_free(&req_type);
+    string_free(&loc);
     free(args);
 }
 
@@ -282,96 +276,28 @@ void server_serve_content(Server *server, const char *fp) {
 }
 
 void server_assign_route(Server *server, const char *route, route_cb cb) {
-    // TODO: check for duplicates,
-    //       check for an absolute route (eg "/hello")
-    //       make as dynarray
-    server->routes[server->route_amt++] = (Route) {
-        .route = (string){(char *)route, (strlen(route)), ((int)1)},
-        .cb = cb
-    };
-    assert(server->route_amt < ROUTES_CAP);
-}
+    size_t strl = strlen(route);
+    if (!(strl && route[0] == '/')) {
+        server_fatal(server, "Path '%s' is not an absolute path. Prepend it with a '/'", route);
+    }
 
-void new_header(str_builder *builder, const char *key, const char *value) {
-    builder_append_cstr(builder, key);
-    builder_append_cstr(builder, value);
-    builder_append_cstr(builder, "\r\n");
-}
+    string str_route = (string){(char *)route, (strl), ((int)1)};
 
-bool debug_route(Server *server, str_builder *resp, str_builder *headers)
-{
-    new_header(headers, "Content-Type: ", "text/html");
-
-    builder_append_cstr(resp, "<pre>");
-    builder_append_buf(resp, cooltext.cstr, cooltext.len);
-    builder_append_cstr(resp, "</pre>"
-                              "<h1>Small webserver written in pure C!</h1>"
-                              "<h3>Routes binded:</h3>"
-                              "<ul>");
     for (int i = 0; i < server->route_amt; i++)
     {
-        builder_append_cstr(resp, "<li><a href=\"");
-        builder_append(resp, server->routes[i].route);
-        builder_append_cstr(resp, "\">");
-        builder_append(resp, server->routes[i].route);
-        // im pretty sure its just printf making results unsusable
-        builder_printf(resp, "</a></li>");
-    }
-    builder_append_cstr(resp, "</ul>"
-                              "<h3>Currently cached files:</h3>"
-                              "<ul>");
-    for (int i = 0; i < CACHE_RING_BUFFER_LEN; i++)
-    {
-        if (server->cache[i].data) {
-            assert(!string_is_strerr(server->cache[i].path));
-            builder_append_cstr(resp, "<li>");
-            builder_append(resp, server->cache[i].path);
-            builder_append_cstr(resp, "</li>");
-        }
-    }
-    builder_append_cstr(resp, "</ul>");
-
-    return true;
-}
-
-bool flush_caches_route(Server *server, str_builder *resp, str_builder *headers)
-{
-    for (int i = 0; i < CACHE_RING_BUFFER_LEN; i++)
-    {
-        if (server->cache[i].data){
-            free(server->cache[i].data);
-            string_free(&server->cache[i].path);
-            server->cache[i].data = NULL;
-            server->cache[i].path = (string){0};
+        if (string_equals(str_route, server->routes[i].route)) {
+            server_fatal(server, "Duplicate route '%s'", route);
         }
     }
     
-    builder_append_cstr(resp, 
-        "<h1>Flushed cache</h1>"
-        "<a href=\"/__debug__\">Debug panel</a>");
+    server->routes[server->route_amt++] = (Route) {
+        .route = str_route,
+        .cb = cb
+    };
 
-    return true;
-}
-
-bool route_html(Server *s, str_builder *resp, str_builder *headers)
-{
-    builder_append_cstr(resp, "<h1>Hello!</h1>");
-
-    return true;
-}
-
-bool route_jpg(Server *s, str_builder *resp, str_builder *headers)
-{
-    new_header(headers, "Content-Type: ", "image/jpeg");
-
-    char *ret; int64_t len;
-    
-    if (!read_file("www/among_drip.jpg", &ret, &len)) return false;
-
-    builder_append_buf(resp, ret, len);
-    free(ret);
-
-    return true;
+    assert(server->route_amt < ROUTES_CAP);
+    // I mean, you won't really have more than 12 routes, making it a
+    // dynarray is easy though. If you want to do it, go ahead.
 }
 
 #ifdef __TINYC__
@@ -391,25 +317,12 @@ int main() {
 #endif
     Server s;
 
-    s = server_create(2581, INADDR_LOOPBACK); // 127.0.0.1:8080
+    s = server_create(8080, INADDR_LOOPBACK); // 127.0.0.1:8080
         server_serve_content(&s, "www");
         server_assign_route(&s, "/hello", route_html);
         server_assign_route(&s, "/among", route_jpg);
         server_assign_route(&s, "/__debug__", debug_route);
         server_assign_route(&s, "/__flush_caches__", flush_caches_route);
+        server_assign_route(&s, "/__ls__", ls_route);
         server_run(&s);
 }
-
-/*
- * echo "1" | doas tee /proc/sys/net/ipv4/tcp_tw_reuse 
- */
-
-// b abort
-// thread apply all bt -full
-
-/* 
- * curl -s -D - http://localhost:8080/strings.c -o /dev/null | bat -A
- * > mimetype text/plain
- * curl -s -D - http://localhost:8080/ -o /dev/null | bat -A
- * > mimetype text/html
- */
