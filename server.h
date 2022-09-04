@@ -84,5 +84,6 @@ DEFINE_ROUTE(flush_caches_route);
 DEFINE_ROUTE(route_html);
 DEFINE_ROUTE(route_jpg);
 DEFINE_ROUTE(ls_route);
+DEFINE_ROUTE(fail_route);
 
 #endif

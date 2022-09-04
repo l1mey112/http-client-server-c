@@ -1,6 +1,6 @@
 #include "server.h"
 
-void new_header(str_builder *builder, const char *key, const char *value) {
+static void new_header(str_builder *builder, const char *key, const char *value) {
     builder_append_cstr(builder, key);
     builder_append_cstr(builder, value);
     builder_append_cstr(builder, "\r\n");
@@ -103,4 +103,11 @@ bool ls_route(Server *server, str_builder *resp, str_builder *headers)
 
     closedir(dir);
     return true;
+}
+
+bool fail_route(Server *server, str_builder *resp, str_builder *headers)
+{
+    builder_append_cstr(resp, "<h1>This will never be displayed</h1>"
+                              "<p>It will result in a 500 Internal Server Error status code</p>");
+    return false;
 }

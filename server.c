@@ -121,7 +121,7 @@ void dispatch(dispatch_args *args) {
         goto EXIT;
     }
 
-    builder_append_cstr(&headers, "HTTP/1.1 200 OK\r\n");
+    builder_append_cstr(&headers, "HTTP/1.0 200 OK\r\n");
     builder_append_cstr(&headers, "Server: Simple-C-Server\r\n");
 
     bool found_route = false;
@@ -219,14 +219,15 @@ void dispatch(dispatch_args *args) {
 //  replacement of control flow keywords like if, for and while.
 //  still, the goto keyword is useful as a break statement that 
 //  exits multiple loops, or as a way of concentrating cleanup code 
-//  in a single place in a function even when there are multiple 
-//  ways to terminate the function. this is exactly what i am using 
-//  the goto keyword for.
+//  in a single place in a function when there are multiple ways
+//  to terminate the function. this is exactly what i am using the 
+//  goto keyword for.
 //  
-//  sure, goto should be "avoided at all costs!!" when you are just
+//  sure, goto should be "avoided at all costs!!" when you are
 //  getting to learn C or C++, there are better options than a goto.
 //  
-//  it still has it's place in C if you know where it's applicable
+//  it still has it's place in C if you know where it's applicable,
+//  hell, even the linux kernel does it (torvalds approved).
 EXIT: 
     close(conn);
     server_info(server, "Connection closed");
@@ -317,12 +318,13 @@ int main() {
 #endif
     Server s;
 
-    s = server_create(8080, INADDR_LOOPBACK); // 127.0.0.1:8080
-        server_serve_content(&s, "www");
-        server_assign_route(&s, "/hello", route_html);
-        server_assign_route(&s, "/among", route_jpg);
-        server_assign_route(&s, "/__debug__", debug_route);
-        server_assign_route(&s, "/__flush_caches__", flush_caches_route);
-        server_assign_route(&s, "/__ls__", ls_route);
-        server_run(&s);
+    s = server_create        ( 8080 ,   INADDR_LOOPBACK                          ); /*** Create a server with port 8080 on the loopback address (127.0.0.1:8080) ***/
+        server_serve_content ( &s   ,   "www/"                                   ); /*** Serve static content from this location                                 ***/
+        server_assign_route  ( &s   ,   "/hello"            , route_html         ); // Send a basic h1 html tag
+        server_assign_route  ( &s   ,   "/among"            , route_jpg          ); // Send a jpeg read from the webroot, passing the correct mimetype
+        server_assign_route  ( &s   ,   "/__debug__"        , debug_route        ); // Show debug information, listing all routes and cached files
+        server_assign_route  ( &s   ,   "/__flush_caches__" , flush_caches_route ); // Flush caches, freeing all files currently stored in memory
+        server_assign_route  ( &s   ,   "/__ls__"           , ls_route           ); // List all files in the webroot directory, with links to them
+        server_assign_route  ( &s   ,   "/fail"             , fail_route         ); // Route will always fail and trigger an return error code of 500
+        server_run           ( &s                                                ); /*** Run the server, function will never return                              ***/
 }
