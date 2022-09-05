@@ -22,7 +22,7 @@ const string mimetypes[mimetypes_len] = {
 	slit(".jar"), slit("application/java-archive"),
 	slit(".jpeg"), slit("image/jpeg"),
 	slit(".jpg"), slit("image/jpeg"),
-	slit(".js"), slit("application/javascript"),
+	slit(".js"), slit("text/javascript"),
 	slit(".json"), slit("application/json"),
 	slit(".mid"), slit("audio/midi"),
 	slit(".midi"), slit("audio/midi"),
@@ -61,8 +61,8 @@ const string mimetypes[mimetypes_len] = {
 	slit(".7z"), slit("application/x-7z-compressed")
 };
 
-// static_assert(sizeof(mimetypes) / sizeof(string) % 2 == 0, "Mimetypes list must be even");
-// static_assert(sizeof(mimetypes) / sizeof(string) == mimetypes_len, "Update mimetypes length");
+static_assert(sizeof(mimetypes) / sizeof(string) % 2 == 0, "Mimetypes list must be even");
+static_assert(sizeof(mimetypes) / sizeof(string) == mimetypes_len, "Update mimetypes length");
 
 string match_file_type(string path){
 	int last_dot = -1;

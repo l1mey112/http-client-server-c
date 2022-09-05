@@ -185,7 +185,7 @@ void dispatch(dispatch_args *args) {
         {
             mimetype = slit("text/plain");
             // Search the first 50 chars for non printable characters
-            for (int i = 0; i < MIN(50,file->len); i++) {
+            for (int i = 0; i < MIN(50, file->len); i++) {
                 if (!(isprint(file->data[i]) || isspace(file->data[i]))){
                     mimetype = slit("application/octet-stream");
                     break;
@@ -195,9 +195,7 @@ void dispatch(dispatch_args *args) {
 
         string_free(&file_path);
 
-        builder_append_cstr(&headers, "Content-Type: ");
-        builder_append(&headers, mimetype);
-        builder_append_cstr(&headers, "\r\n");
+        builder_printf(&headers, "Content-Type: %s\r\n", mimetype.cstr);
     }
     builder_append_cstr(&headers, "\r\n");
 
@@ -326,5 +324,7 @@ int main() {
         server_assign_route  ( &s   ,   "/__flush_caches__" , flush_caches_route ); // Flush caches, freeing all files currently stored in memory
         server_assign_route  ( &s   ,   "/__ls__"           , ls_route           ); // List all files in the webroot directory, with links to them
         server_assign_route  ( &s   ,   "/fail"             , fail_route         ); // Route will always fail and trigger an return error code of 500
+        server_assign_route  ( &s   ,   "/counter"          , route_counter      ); // Just counts...
         server_run           ( &s                                                ); /*** Run the server, function will never return                              ***/
+
 }

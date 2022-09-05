@@ -44,8 +44,8 @@ bool flush_caches_route(Server *server, str_builder *resp, str_builder *headers)
     for (int i = 0; i < CACHE_RING_BUFFER_LEN; i++)
     {
         if (server->cache[i].data){
-            free(server->cache[i].data);
             string_free(&server->cache[i].path);
+            free(server->cache[i].data);
             server->cache[i].data = NULL;
             server->cache[i].path = (string){0};
         }
@@ -99,7 +99,7 @@ bool ls_route(Server *server, str_builder *resp, str_builder *headers)
 
         builder_printf(resp, "<li><a href=\"/%s\">%s</a></li>", fname, fname);
     }
-    builder_append_cstr(resp, "</ul>");
+    builder_append_cstr(resp, "</ul><a href=\"/__debug__\">Debug panel</a>");
 
     closedir(dir);
     return true;
@@ -110,4 +110,29 @@ bool fail_route(Server *server, str_builder *resp, str_builder *headers)
     builder_append_cstr(resp, "<h1>This will never be displayed</h1>"
                               "<p>It will result in a 500 Internal Server Error status code</p>");
     return false;
+}
+
+static int counter = 0;
+
+bool route_counter(Server *server, str_builder *resp, str_builder *headers)
+{
+    builder_append_cstr(headers, "Content-Type: text/plain\r\n");
+
+    if (counter == 17171717) {
+        // 500 Internal Server Error
+        return false;
+    }
+
+    builder_printf(resp, "counter = %d\n\n", counter);
+
+    if (counter % 2 == 0) {
+        builder_append_cstr(resp, "counter is even\n");
+    } else {
+        builder_append_cstr(resp, "counter is odd\n");
+    }
+    
+    counter++;
+    
+    // 200 OK
+    return true;
 }

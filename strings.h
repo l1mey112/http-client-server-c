@@ -27,6 +27,7 @@ typedef struct {
 #define strerr (string){(char *)0, 0, 0}
 
 void string_free(string *a);
+string string_clone(string a);
 string string_concat(string a, string b);
 bool string_contains(string str, string substr);
 bool string_equals(string a, string b);

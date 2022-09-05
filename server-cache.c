@@ -1,17 +1,18 @@
 #include "server.h"
 
-CachedFile *server_get_file(Server *server, string file_path){
+CachedFile *server_get_file(Server *server, string _file_path){
 	
 	// File in cache?
 	for (int i = 0; i < CACHE_RING_BUFFER_LEN; i++)
 	{
-		if (string_equals(server->cache[i].path, file_path)) {
-			server_info(server, "Found file '%s' in cache", file_path.cstr);
+		if (string_equals(server->cache[i].path, _file_path)) {
+			server_info(server, "Found file '%s' in cache", _file_path.cstr);
 			return &server->cache[i];
 		}
 	}
 	
 	pthread_mutex_lock(&server->slock);
+	string file_path = string_clone(_file_path);
 	// No file in cache, read it and insert into ring buffer
 	if (server->cache[server->cache_position].data){
 		free(server->cache[server->cache_position].data);

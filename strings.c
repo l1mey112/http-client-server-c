@@ -1,15 +1,26 @@
 #include "strings.h"
 
 void string_free(string *a){
+	assert(a->is_literal != 1717171717);
 	if (a->is_literal) return;
 
-	assert(a->is_literal != 1717171717);
 	free(a->cstr);
 	a->is_literal = 1717171717;
 }
 
 bool string_is_strerr(string a){
 	return a.cstr == NULL;
+}
+
+string string_clone(string a){
+	string ret = (string){
+		.cstr = malloc(a.len + 1),
+		.len = a.len,
+		.is_literal = 0
+	};
+	assert(ret.cstr);
+	memcpy(ret.cstr, a.cstr, a.len + 1);
+	return ret;
 }
 
 string string_from_buf(char *buf, size_t len){
